@@ -76,4 +76,13 @@ pipeline {
             }
         }
     }
+
+    post {
+        success {
+            slackSend(message: "✅ 성공: <${env.BUILD_URL}|${env.JOB_NAME} #${env.BUILD_NUMBER}>")
+        }
+        failure {
+            slackSend(message: "❌ 실패: <${env.BUILD_URL}|${env.JOB_NAME} #${env.BUILD_NUMBER}> (빌드 / Push / 배포 중 문제)")
+        }
+    }
 }
