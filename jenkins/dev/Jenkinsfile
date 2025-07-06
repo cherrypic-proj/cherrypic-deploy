@@ -1,0 +1,64 @@
+pipeline {
+    agent any
+
+    environment {
+        GIT_REPOSITORY_URL = 'https://github.com/cherrypic-proj/cherrypic-server.git'
+        ECR_REGISTRY = '805472282514.dkr.ecr.ap-northeast-2.amazonaws.com'
+        ECR_REPOSITORY = 'cherrypic-api'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
+
+    stages {
+        stage('init') {
+            steps {
+                deleteDir()
+            }
+        }
+
+        stage('Clone repository') {
+            steps {
+                git branch: "develop",
+                url: "${GIT_REPOSITORY_URL}"
+            }
+        }
+        
+        stage('Build API') {
+            steps {
+                sh './gradlew :cherrypic-api:clean build -x test'
+            }
+        }
+        
+        stage('Build API Image') {
+            steps {
+                script {
+                    image = docker.build("${ECR_REPOSITORY}:${IMAGE_TAG}", "cherrypic-api")
+                }
+            }
+        }
+
+        stage('Push API image') {
+            steps {
+                script {
+                    docker.withRegistry("https://${ECR_REGISTRY}/${ECR_REPOSITORY}:", "ecr:ap-northeast-2:aws-credentials") {
+                        image.push("${IMAGE_TAG}")
+                    }
+                }
+            }
+        }
+        
+        stage('Prune Docker Images') {
+            steps {
+                sh "docker image prune -a -f"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ API image pushed to ECR: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+        }
+        failure {
+            echo "❌ Build or push failed!"
+        }
+    }
+}
