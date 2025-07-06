@@ -2,6 +2,7 @@ pipeline {
     agent any
 
     environment {
+        AWS_REGION = 'ap-northeast-2'
         GIT_REPOSITORY_URL = 'https://github.com/cherrypic-proj/cherrypic-server.git'
         ECR_REGISTRY = '805472282514.dkr.ecr.ap-northeast-2.amazonaws.com'
         ECR_REPOSITORY = 'cherrypic-api'
@@ -36,7 +37,7 @@ pipeline {
             }
         }
 
-        stage('Push API image') {
+        stage('Push API image to ECR') {
             steps {
                 script {
                     docker.withRegistry("https://${ECR_REGISTRY}/${ECR_REPOSITORY}:", "ecr:ap-northeast-2:aws-credentials") {
@@ -51,14 +52,27 @@ pipeline {
                 sh "docker image prune -a -f"
             }
         }
-    }
 
-    post {
-        success {
-            echo "✅ API image pushed to ECR: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-        }
-        failure {
-            echo "❌ Build or push failed!"
+        stage('Deploy to EC2') {
+            steps {
+                sshPublisher(
+                    publishers: [
+                        sshPublisherDesc(
+                            configName: 'cherrypic-was-dev',
+                            transfers: [
+                                sshTransfer(
+                                    execCommand: """
+                                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                                    docker pull ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+                                    docker rm -f cherrypic-api || true
+                                    docker run -d --name cherrypic-api --env-file .env -p 8080:8080 ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+                                    """
+                                )
+                            ]
+                        )
+                    ]
+                )
+            }
         }
     }
 }
